@@ -18,6 +18,11 @@ func TestRedis_Connection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("container: %v", err)
 	}
+	t.Cleanup(func() {
+		if err := cleanup(context.Background()); err != nil {
+			t.Errorf("cleanup: %v", err)
+		}
+	})
 
 	checker := redischeck.New(addr, config.Policy{})
 
@@ -28,11 +33,4 @@ func TestRedis_Connection(t *testing.T) {
 	if status.Code(err) != codes.Unimplemented {
 		t.Fatalf("check: %v", err)
 	}
-
-	t.Cleanup(func() {
-		err := cleanup(context.Background())
-		if err != nil {
-			t.Errorf("cleanup: %v", err)
-		}
-	})
 }

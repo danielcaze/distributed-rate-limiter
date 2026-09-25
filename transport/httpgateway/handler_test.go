@@ -53,6 +53,7 @@ func TestCheck_Allowed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("listen: %v", err)
 	}
+	t.Cleanup(func() { listener.Close() })
 
 	fc := &fixedChecker{
 		Allowed:    true,
@@ -63,6 +64,8 @@ func TestCheck_Allowed(t *testing.T) {
 	}
 
 	grpcServer := grpc.NewServer()
+	t.Cleanup(func() { grpcServer.Stop() })
+
 	grpcService := grpcserver.Server{Checker: fc}
 	limiterv1.RegisterLimiterServer(grpcServer, grpcService)
 
@@ -73,11 +76,13 @@ func TestCheck_Allowed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("dial: %v", err)
 	}
+	t.Cleanup(func() { conn.Close() })
 
 	client := limiterv1.NewLimiterClient(conn)
 	handler := httpgateway.New(client, 10*time.Second, func(_ context.Context) error { return nil })
 
 	httpServer := httptest.NewServer(handler)
+	t.Cleanup(func() { httpServer.Close() })
 
 	key := "user-123"
 
@@ -88,6 +93,7 @@ func TestCheck_Allowed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("check: %v", err)
 	}
+	t.Cleanup(func() { res.Body.Close() })
 
 	if res.StatusCode != http.StatusOK {
 		t.Fatalf("status code = %d, want %d", res.StatusCode, http.StatusOK)
@@ -115,14 +121,6 @@ func TestCheck_Allowed(t *testing.T) {
 	if response.Remaining != 0 {
 		t.Fatalf("response.Remaining = %d, want 0", response.Remaining)
 	}
-
-	t.Cleanup(func() {
-		listener.Close()
-		grpcServer.Stop()
-		httpServer.Close()
-		conn.Close()
-		res.Body.Close()
-	})
 }
 
 func TestCheck_Denied(t *testing.T) {
@@ -131,6 +129,7 @@ func TestCheck_Denied(t *testing.T) {
 	if err != nil {
 		t.Fatalf("listen: %v", err)
 	}
+	t.Cleanup(func() { listener.Close() })
 
 	fc := &fixedChecker{
 		Allowed:    false,
@@ -141,6 +140,8 @@ func TestCheck_Denied(t *testing.T) {
 	}
 
 	grpcServer := grpc.NewServer()
+	t.Cleanup(func() { grpcServer.Stop() })
+
 	grpcService := grpcserver.Server{Checker: fc}
 	limiterv1.RegisterLimiterServer(grpcServer, grpcService)
 
@@ -151,11 +152,13 @@ func TestCheck_Denied(t *testing.T) {
 	if err != nil {
 		t.Fatalf("dial: %v", err)
 	}
+	t.Cleanup(func() { conn.Close() })
 
 	client := limiterv1.NewLimiterClient(conn)
 	handler := httpgateway.New(client, 10*time.Second, func(_ context.Context) error { return nil })
 
 	httpServer := httptest.NewServer(handler)
+	t.Cleanup(func() { httpServer.Close() })
 
 	key := "user-123"
 
@@ -166,6 +169,7 @@ func TestCheck_Denied(t *testing.T) {
 	if err != nil {
 		t.Fatalf("check: %v", err)
 	}
+	t.Cleanup(func() { res.Body.Close() })
 
 	if res.StatusCode != http.StatusTooManyRequests {
 		t.Fatalf("status code = %d, want %d", res.StatusCode, http.StatusTooManyRequests)
@@ -193,14 +197,6 @@ func TestCheck_Denied(t *testing.T) {
 	if response.Remaining != 0 {
 		t.Fatalf("response.Remaining = %d, want 0", response.Remaining)
 	}
-
-	t.Cleanup(func() {
-		listener.Close()
-		grpcServer.Stop()
-		httpServer.Close()
-		conn.Close()
-		res.Body.Close()
-	})
 }
 
 func TestCheck_NoKey(t *testing.T) {
@@ -208,6 +204,7 @@ func TestCheck_NoKey(t *testing.T) {
 	handler := httpgateway.New(client, 10*time.Second, func(_ context.Context) error { return nil })
 
 	httpServer := httptest.NewServer(handler)
+	t.Cleanup(func() { httpServer.Close() })
 
 	key := ""
 
@@ -218,15 +215,11 @@ func TestCheck_NoKey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("check: %v", err)
 	}
+	t.Cleanup(func() { res.Body.Close() })
 
 	if res.StatusCode != http.StatusBadRequest {
 		t.Fatalf("status code = %d, want %d", res.StatusCode, http.StatusBadRequest)
 	}
-
-	t.Cleanup(func() {
-		httpServer.Close()
-		res.Body.Close()
-	})
 }
 
 func TestCheck_DeadlineExceeded(t *testing.T) {
@@ -235,6 +228,7 @@ func TestCheck_DeadlineExceeded(t *testing.T) {
 	if err != nil {
 		t.Fatalf("listen: %v", err)
 	}
+	t.Cleanup(func() { listener.Close() })
 
 	fc := &fixedChecker{
 		Allowed:    false,
@@ -246,6 +240,8 @@ func TestCheck_DeadlineExceeded(t *testing.T) {
 	}
 
 	grpcServer := grpc.NewServer()
+	t.Cleanup(func() { grpcServer.Stop() })
+
 	grpcService := grpcserver.Server{Checker: fc}
 	limiterv1.RegisterLimiterServer(grpcServer, grpcService)
 
@@ -256,11 +252,13 @@ func TestCheck_DeadlineExceeded(t *testing.T) {
 	if err != nil {
 		t.Fatalf("dial: %v", err)
 	}
+	t.Cleanup(func() { conn.Close() })
 
 	client := limiterv1.NewLimiterClient(conn)
 	handler := httpgateway.New(client, 10*time.Second, func(_ context.Context) error { return nil })
 
 	httpServer := httptest.NewServer(handler)
+	t.Cleanup(func() { httpServer.Close() })
 
 	key := "user-123"
 
@@ -271,6 +269,7 @@ func TestCheck_DeadlineExceeded(t *testing.T) {
 	if err != nil {
 		t.Fatalf("check: %v", err)
 	}
+	t.Cleanup(func() { res.Body.Close() })
 
 	if res.StatusCode != http.StatusGatewayTimeout {
 		t.Fatalf("status code = %d, want %d", res.StatusCode, http.StatusGatewayTimeout)
@@ -279,14 +278,6 @@ func TestCheck_DeadlineExceeded(t *testing.T) {
 	if gotKey := <-fc.Key; gotKey != key {
 		t.Fatalf("key received by checker = %q, want %q", gotKey, key)
 	}
-
-	t.Cleanup(func() {
-		listener.Close()
-		grpcServer.Stop()
-		httpServer.Close()
-		conn.Close()
-		res.Body.Close()
-	})
 }
 
 func TestCheck_Unimplemented(t *testing.T) {
@@ -295,8 +286,11 @@ func TestCheck_Unimplemented(t *testing.T) {
 	if err != nil {
 		t.Fatalf("listen: %v", err)
 	}
+	t.Cleanup(func() { listener.Close() })
 
 	grpcServer := grpc.NewServer()
+	t.Cleanup(func() { grpcServer.Stop() })
+
 	grpcService := grpcserver.Server{Checker: nil}
 	limiterv1.RegisterLimiterServer(grpcServer, grpcService)
 
@@ -307,11 +301,13 @@ func TestCheck_Unimplemented(t *testing.T) {
 	if err != nil {
 		t.Fatalf("dial: %v", err)
 	}
+	t.Cleanup(func() { conn.Close() })
 
 	client := limiterv1.NewLimiterClient(conn)
 	handler := httpgateway.New(client, 10*time.Second, func(_ context.Context) error { return nil })
 
 	httpServer := httptest.NewServer(handler)
+	t.Cleanup(func() { httpServer.Close() })
 
 	key := "user-123"
 
@@ -322,18 +318,11 @@ func TestCheck_Unimplemented(t *testing.T) {
 	if err != nil {
 		t.Fatalf("check: %v", err)
 	}
+	t.Cleanup(func() { res.Body.Close() })
 
 	if res.StatusCode != http.StatusNotImplemented {
 		t.Fatalf("status code = %d, want %d", res.StatusCode, http.StatusNotImplemented)
 	}
-
-	t.Cleanup(func() {
-		listener.Close()
-		grpcServer.Stop()
-		httpServer.Close()
-		conn.Close()
-		res.Body.Close()
-	})
 }
 
 func TestCheck_ClockInjection(t *testing.T) {
@@ -341,6 +330,7 @@ func TestCheck_ClockInjection(t *testing.T) {
 	handler := httpgateway.New(client, 10*time.Second, func(_ context.Context) error { return nil })
 
 	httpServer := httptest.NewServer(handler)
+	t.Cleanup(func() { httpServer.Close() })
 
 	key := "user-123"
 
@@ -351,15 +341,11 @@ func TestCheck_ClockInjection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("check: %v", err)
 	}
+	t.Cleanup(func() { res.Body.Close() })
 
 	if res.StatusCode != http.StatusBadRequest {
 		t.Fatalf("status code = %d, want %d", res.StatusCode, http.StatusBadRequest)
 	}
-
-	t.Cleanup(func() {
-		httpServer.Close()
-		res.Body.Close()
-	})
 }
 
 func TestHealth_Success(t *testing.T) {
@@ -367,21 +353,18 @@ func TestHealth_Success(t *testing.T) {
 	handler := httpgateway.New(client, 10*time.Second, func(_ context.Context) error { return nil })
 
 	httpServer := httptest.NewServer(handler)
+	t.Cleanup(func() { httpServer.Close() })
 
 	res, err := http.Get(httpServer.URL + "/healthz")
 
 	if err != nil {
 		t.Fatalf("check: %v", err)
 	}
+	t.Cleanup(func() { res.Body.Close() })
 
 	if res.StatusCode != http.StatusOK {
 		t.Fatalf("status code = %d, want %d", res.StatusCode, http.StatusOK)
 	}
-
-	t.Cleanup(func() {
-		httpServer.Close()
-		res.Body.Close()
-	})
 }
 
 func TestReady_Success(t *testing.T) {
@@ -389,21 +372,18 @@ func TestReady_Success(t *testing.T) {
 	handler := httpgateway.New(client, 10*time.Second, func(_ context.Context) error { return nil })
 
 	httpServer := httptest.NewServer(handler)
+	t.Cleanup(func() { httpServer.Close() })
 
 	res, err := http.Get(httpServer.URL + "/readyz")
 
 	if err != nil {
 		t.Fatalf("check: %v", err)
 	}
+	t.Cleanup(func() { res.Body.Close() })
 
 	if res.StatusCode != http.StatusOK {
 		t.Fatalf("status code = %d, want %d", res.StatusCode, http.StatusOK)
 	}
-
-	t.Cleanup(func() {
-		httpServer.Close()
-		res.Body.Close()
-	})
 }
 
 func TestReady_Error(t *testing.T) {
@@ -411,19 +391,16 @@ func TestReady_Error(t *testing.T) {
 	handler := httpgateway.New(client, 10*time.Second, func(_ context.Context) error { return context.Canceled })
 
 	httpServer := httptest.NewServer(handler)
+	t.Cleanup(func() { httpServer.Close() })
 
 	res, err := http.Get(httpServer.URL + "/readyz")
 
 	if err != nil {
 		t.Fatalf("check: %v", err)
 	}
+	t.Cleanup(func() { res.Body.Close() })
 
 	if res.StatusCode != http.StatusServiceUnavailable {
 		t.Fatalf("status code = %d, want %d", res.StatusCode, http.StatusServiceUnavailable)
 	}
-
-	t.Cleanup(func() {
-		httpServer.Close()
-		res.Body.Close()
-	})
 }
