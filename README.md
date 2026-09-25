@@ -28,7 +28,7 @@ docker compose down
 
 For local Go execution with an existing Redis on `127.0.0.1:6379`, run `go run ./cmd/limiter`. Settings, units, validation, and error codes are in [the M1 contract](docs/m1-contract.md). Sample environment values are in [`.env.example`](.env.example).
 
-Optional Git hooks use [Lefthook](https://lefthook.dev/). Install the pinned Go 1.23 compatible version for this checkout with `go run github.com/evilmartians/lefthook@v1.11.1 install`. The hook runs `gofmt`, `go vet ./...`, and `go build ./...`; it does not require admission tests before their implementation.
+Optional Git hooks use [Lefthook](https://lefthook.dev/). Install the pinned Go 1.27 compatible version for this checkout with `go run github.com/evilmartians/lefthook@v1.11.1 install`. The hook runs `gofmt`, `go vet ./...`, and `go build ./...`; it does not require admission tests before their implementation.
 
 ## Project guidance
 
