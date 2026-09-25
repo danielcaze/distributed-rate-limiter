@@ -12,7 +12,9 @@ import (
 	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
 
 	limiterv1 "github.com/danielcaze/distributed-rate-limiter/gen/limiter/v1"
@@ -58,7 +60,7 @@ func TestCheck_Allowed(t *testing.T) {
 	fc := &fixedChecker{
 		Allowed:    true,
 		Remaining:  0,
-		ResetAt:    time.Now().Add(1),
+		ResetAt:    time.Now().Add(time.Minute),
 		RetryAfter: 0,
 		Key:        make(chan string, 1),
 	}
@@ -116,10 +118,16 @@ func TestCheck_Allowed(t *testing.T) {
 	}
 
 	if !response.Allowed {
-		t.Fatalf("response.Allowed = false, want true")
+		t.Fatalf("response.Allowed = %v, want %v", response.Allowed, fc.Allowed)
 	}
 	if response.Remaining != 0 {
-		t.Fatalf("response.Remaining = %d, want 0", response.Remaining)
+		t.Fatalf("response.Remaining = %d, want %d", response.Remaining, fc.Remaining)
+	}
+	if !response.GetResetAt().AsTime().Equal(fc.ResetAt) {
+		t.Fatalf("response.ResetAt = %v, want %v", response.GetResetAt().AsTime(), fc.ResetAt)
+	}
+	if response.GetRetryAfter().AsDuration() != fc.RetryAfter {
+		t.Fatalf("response.RetryAfter = %v, want %v", response.GetRetryAfter().AsDuration(), fc.RetryAfter)
 	}
 }
 
@@ -134,8 +142,8 @@ func TestCheck_Denied(t *testing.T) {
 	fc := &fixedChecker{
 		Allowed:    false,
 		Remaining:  0,
-		ResetAt:    time.Now().Add(1),
-		RetryAfter: 0,
+		ResetAt:    time.Now().Add(time.Minute),
+		RetryAfter: time.Minute * 5,
 		Key:        make(chan string, 1),
 	}
 
@@ -192,10 +200,16 @@ func TestCheck_Denied(t *testing.T) {
 	}
 
 	if response.Allowed {
-		t.Fatalf("response.Allowed = %v, want %v", response.Allowed, !response.Allowed)
+		t.Fatalf("response.Allowed = %v, want %v", response.Allowed, fc.Allowed)
 	}
 	if response.Remaining != 0 {
-		t.Fatalf("response.Remaining = %d, want 0", response.Remaining)
+		t.Fatalf("response.Remaining = %d, want %d", response.Remaining, fc.Remaining)
+	}
+	if !response.GetResetAt().AsTime().Equal(fc.ResetAt) {
+		t.Fatalf("response.ResetAt = %v, want %v", response.GetResetAt().AsTime(), fc.ResetAt)
+	}
+	if response.GetRetryAfter().AsDuration() != fc.RetryAfter {
+		t.Fatalf("response.RetryAfter = %v, want %v", response.GetRetryAfter().AsDuration(), fc.RetryAfter)
 	}
 }
 
@@ -273,6 +287,64 @@ func TestCheck_DeadlineExceeded(t *testing.T) {
 
 	if res.StatusCode != http.StatusGatewayTimeout {
 		t.Fatalf("status code = %d, want %d", res.StatusCode, http.StatusGatewayTimeout)
+	}
+
+	if gotKey := <-fc.Key; gotKey != key {
+		t.Fatalf("key received by checker = %q, want %q", gotKey, key)
+	}
+}
+
+func TestCheck_Unavailable(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	t.Cleanup(func() { listener.Close() })
+
+	fc := &fixedChecker{
+		Allowed:    false,
+		Remaining:  0,
+		ResetAt:    time.Now().Add(1),
+		RetryAfter: 0,
+		Key:        make(chan string, 1),
+		Err:        status.Error(codes.Unavailable, "admission unavailable"),
+	}
+
+	grpcServer := grpc.NewServer()
+	t.Cleanup(func() { grpcServer.Stop() })
+
+	grpcService := grpcserver.Server{Checker: fc}
+	limiterv1.RegisterLimiterServer(grpcServer, grpcService)
+
+	go grpcServer.Serve(listener)
+
+	conn, err := grpc.NewClient(listener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	t.Cleanup(func() { conn.Close() })
+
+	client := limiterv1.NewLimiterClient(conn)
+	handler := httpgateway.New(client, 10*time.Second, func(_ context.Context) error { return nil })
+
+	httpServer := httptest.NewServer(handler)
+	t.Cleanup(func() { httpServer.Close() })
+
+	key := "user-123"
+
+	reqBody := strings.NewReader(fmt.Sprintf(`{"key": %q}`, key))
+
+	res, err := http.Post(httpServer.URL+"/v1/check", "application/json", reqBody)
+
+	if err != nil {
+		t.Fatalf("check: %v", err)
+	}
+	t.Cleanup(func() { res.Body.Close() })
+
+	if res.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("status code = %d, want %d", res.StatusCode, http.StatusServiceUnavailable)
 	}
 
 	if gotKey := <-fc.Key; gotKey != key {
