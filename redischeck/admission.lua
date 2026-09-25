@@ -1,0 +1,11 @@
+-- Pending admission implementation. This file intentionally contains no commands.
+-- Input contract for the later script: KEYS[1] is the bucket key, ARGV[1] is
+-- the shared capacity (positive whole tokens), and ARGV[2] is the shared refill
+-- rate (positive tokens per second). Production time comes from Redis TIME;
+-- deterministic time override is available only through an internal test path.
+-- Output contract: a four-element array containing allowed (0 or 1), remaining
+-- (whole admissions), reset_at (Unix microseconds in UTC), and retry_after
+-- (nonnegative microseconds). reset_at is when the bucket would next be full
+-- with no more requests; retry_after is zero on admission and otherwise the
+-- earliest next admission. Admission is atomic per key. An allowed decision
+-- consumes one admission, and a denial consumes none.
