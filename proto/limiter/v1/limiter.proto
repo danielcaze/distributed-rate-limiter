@@ -1,0 +1,29 @@
+syntax = "proto3";
+
+package limiter.v1;
+
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/danielcaze/distributed-rate-limiter/gen/limiter/v1;limiterv1";
+
+// Limiter checks admission against the one shared configured policy.
+service Limiter {
+  rpc Check(CheckRequest) returns (CheckResponse);
+}
+
+message CheckRequest {
+  // Opaque bucket identifier supplied by a trusted backend, not a credential.
+  string key = 1;
+}
+
+message CheckResponse {
+  // A denied request returns an OK RPC with allowed=false.
+  bool allowed = 1;
+  // Whole admissions available immediately after this decision.
+  uint64 remaining = 2;
+  // When the bucket would be full if no further requests arrive.
+  google.protobuf.Timestamp reset_at = 3;
+  // Earliest next admission after a denial; zero for an allowed request.
+  google.protobuf.Duration retry_after = 4;
+}

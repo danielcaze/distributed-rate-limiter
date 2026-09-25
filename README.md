@@ -1,12 +1,14 @@
 # Distributed Rate Limiter
 
-An educational, public project for building a shared rate limiter with Go, Redis, gRPC, and a thin HTTP gateway. The repository currently contains setup and work tracking only; the service is not runnable yet.
+An educational, public project for building a shared rate limiter with Go, Redis, gRPC, and a thin HTTP gateway. The repository now has the M1 admission contract, protobuf source, and generated Go code. The service is not wired or runnable yet.
 
 ## M1: walking skeleton
 
 M1 targets a Go service whose HTTP gateway calls its own loopback gRPC endpoint, with Redis-backed admission through a checked-in Lua script. A single Compose command should start the service and Redis. The done check is a `curl` sequence that is allowed, then denied, then allowed after refill. See [M1 issues](https://github.com/danielcaze/distributed-rate-limiter/issues) for the work units and evidence gates.
 
 M1 does not include retry, idempotency, or failure policy design. The linked issues define the remaining work and its dependencies.
+
+The [M1 admission contract](docs/m1-contract.md) defines the current interface, semantics, error mapping, and pinned regeneration command. It does not claim working rate limiting. The eventual M1 `curl` demonstration simulates a trusted backend that derives the bucket identifier from a verified session; M1 does not provide public authentication or access enforcement.
 
 ## Project guidance
 
