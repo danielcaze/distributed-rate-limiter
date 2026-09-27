@@ -1,10 +1,13 @@
-// Package redischeck is the Redis admission adapter. The admission script is pending.
+// Package redischeck is the Redis admission adapter.
 package redischeck
 
 import (
 	"context"
+	_ "embed"
 	"errors"
+	"fmt"
 	"net"
+	"time"
 
 	"github.com/danielcaze/distributed-rate-limiter/config"
 	"github.com/danielcaze/distributed-rate-limiter/limiter"
@@ -13,33 +16,96 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+//go:embed admission.lua
+var admissionScript string
+
+const (
+	allowedIdx = iota
+	remainingIdx
+	resetAtIdx
+	retryAfterIdx
+)
+
 type Checker struct {
 	client *redis.Client
 	policy config.Policy
+	sha    string
 }
 
-func New(addr string, policy config.Policy) *Checker {
+func New(ctx context.Context, addr string, policy config.Policy) (*Checker, error) {
 	client := redis.NewClient(&redis.Options{Addr: addr, MaxRetries: -1})
-	return &Checker{client: client, policy: policy}
+	sha, err := client.ScriptLoad(ctx, admissionScript).Result()
+	if err != nil {
+		return nil, err
+	}
+	return &Checker{client: client, policy: policy, sha: sha}, nil
 }
 
 func (c *Checker) Close() error { return c.client.Close() }
 
 func (c *Checker) Ping(ctx context.Context) error { return c.client.Ping(ctx).Err() }
 
-// Check keeps Redis failure mapping reachable while the Lua script is absent.
-// A successful PING says nothing about admission; no bucket command is issued.
-func (c *Checker) Check(ctx context.Context, _ string) (limiter.Decision, error) {
+// Check runs the admission script atomically against the bucket for key.
+func (c *Checker) Check(ctx context.Context, key string) (limiter.Decision, error) {
 	if err := c.Ping(ctx); err != nil {
 		return limiter.Decision{}, redisError(err)
 	}
-	return limiter.Decision{}, status.Error(codes.Unimplemented, "admission script is not implemented")
+
+	res, err := evalWithRetry(ctx, c, key)
+
+	if err != nil {
+		return limiter.Decision{}, redisError(err)
+	}
+
+	arr, ok := res.([]interface{})
+	if !ok {
+		return limiter.Decision{}, status.Error(codes.Internal, fmt.Sprintf("admission script returned unexpected reply type %T", res))
+	}
+
+	allowed := arr[allowedIdx].(int64) == 1
+	remaining := uint64(arr[remainingIdx].(int64))
+	resetAt := time.UnixMicro(arr[resetAtIdx].(int64))
+	retryAfter := time.Duration(arr[retryAfterIdx].(int64)) * time.Microsecond
+
+	reply := limiter.Decision{
+		Allowed:    allowed,
+		Remaining:  remaining,
+		ResetAt:    resetAt,
+		RetryAfter: retryAfter,
+	}
+
+	return reply, nil
+}
+
+func evalWithRetry(ctx context.Context, c *Checker, key string) (interface{}, error) {
+	res, err := c.client.EvalSha(ctx, c.sha, []string{key}, c.policy.Capacity, c.policy.RefillTokensPerSecond).Result()
+
+	if err != nil {
+		if redis.HasErrorPrefix(err, "NOSCRIPT") {
+			sha, err := c.client.ScriptLoad(ctx, admissionScript).Result()
+			if err != nil {
+				return nil, redisError(err)
+			}
+			c.sha = sha
+
+			res, err := c.client.EvalSha(ctx, c.sha, []string{key}, c.policy.Capacity, c.policy.RefillTokensPerSecond).Result()
+			if err != nil {
+				return nil, redisError(err)
+			}
+
+			return res, nil
+		}
+		return nil, redisError(err)
+	}
+
+	return res, nil
 }
 
 func redisError(err error) error {
 	if errors.Is(err, context.DeadlineExceeded) {
 		return status.Error(codes.DeadlineExceeded, "Redis deadline exceeded")
 	}
+
 	var netErr net.Error
 	if errors.As(err, &netErr) && netErr.Timeout() {
 		return status.Error(codes.DeadlineExceeded, "Redis deadline exceeded")

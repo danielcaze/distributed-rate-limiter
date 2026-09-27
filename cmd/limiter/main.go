@@ -30,9 +30,13 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	checker := redischeck.New(cfg.RedisAddr, cfg.Policy)
-	defer checker.Close()
 	startupCtx, cancel := context.WithTimeout(context.Background(), cfg.RequestTimeout)
+	checker, err := redischeck.New(startupCtx, cfg.RedisAddr, cfg.Policy)
+	if err != nil {
+		cancel()
+		return err
+	}
+	defer checker.Close()
 	err = checker.Ping(startupCtx)
 	cancel()
 	if err != nil {

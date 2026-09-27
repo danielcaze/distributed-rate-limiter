@@ -7,11 +7,61 @@ import (
 	"github.com/danielcaze/distributed-rate-limiter/config"
 	"github.com/danielcaze/distributed-rate-limiter/redischeck"
 	"github.com/danielcaze/distributed-rate-limiter/testsupport"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 )
 
 func TestRedis_Connection(t *testing.T) {
+	checker, ctx := setupChecker(t, config.Policy{})
+
+	if err := checker.Ping(ctx); err != nil {
+		t.Fatalf("ping: %v", err)
+	}
+}
+
+func TestChecker_FirstCallAllowed(t *testing.T) {
+	checker, ctx := setupChecker(t, config.Policy{Capacity: 2, RefillTokensPerSecond: 1})
+	key := "user-123"
+
+	decision, err := checker.Check(ctx, key)
+
+	if err != nil {
+		t.Fatalf("check: %v", err)
+	}
+
+	if !decision.Allowed {
+		t.Fatalf("decision.Allowed = %v, want true", decision.Allowed)
+	}
+}
+
+func TestChecker_DeniesWhenExhausted(t *testing.T) {
+	capacity := 2
+	checker, ctx := setupChecker(t, config.Policy{Capacity: uint64(capacity), RefillTokensPerSecond: 1})
+	key := "user-123"
+
+	for i := range capacity + 1 {
+		decision, err := checker.Check(ctx, key)
+
+		if err != nil {
+			t.Fatalf("check: %v", err)
+		}
+
+		if i == capacity {
+			if decision.RetryAfter == 0 {
+				t.Fatalf("decision.RetryAfter = %v, want a positive duration", decision.RetryAfter)
+			}
+
+			if decision.Allowed {
+				t.Fatalf("decision.Allowed = %v, want false", decision.Allowed)
+			}
+
+		} else {
+			if !decision.Allowed {
+				t.Fatalf("decision.Allowed = %v, want true", decision.Allowed)
+			}
+		}
+	}
+}
+
+func setupChecker(t *testing.T, policy config.Policy) (*redischeck.Checker, context.Context) {
 	ctx := t.Context()
 	addr, cleanup, err := testsupport.RedisContainer(ctx)
 
@@ -24,13 +74,10 @@ func TestRedis_Connection(t *testing.T) {
 		}
 	})
 
-	checker := redischeck.New(addr, config.Policy{})
-
-	_, err = checker.Check(ctx, "")
-
-	// Update this check once issue #3 implements real admission; Check will
-	// stop always returning Unimplemented.
-	if status.Code(err) != codes.Unimplemented {
-		t.Fatalf("check: %v", err)
+	checker, err := redischeck.New(ctx, addr, policy)
+	if err != nil {
+		t.Fatalf("redis check: %v", err)
 	}
+
+	return checker, ctx
 }
