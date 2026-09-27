@@ -2,7 +2,8 @@
 -- Input contract for the later script: KEYS[1] is the bucket key, ARGV[1] is
 -- the shared capacity (positive whole tokens), and ARGV[2] is the shared refill
 -- rate (positive tokens per second). Production time comes from Redis TIME;
--- deterministic time override is available only through an internal test path.
+-- ARGV[3] is an optional timestamp in Unix microseconds, supplied only by the
+-- package-private test path. Production calls omit it and use Redis TIME.
 -- Output contract: a four-element array containing allowed (0 or 1), remaining
 -- (whole admissions), reset_at (Unix microseconds in UTC), and retry_after
 -- (nonnegative microseconds). reset_at is when the bucket would next be full
@@ -14,10 +15,15 @@ local MICROS_PER_SECOND = 1000000
 local key = KEYS[1]
 local capacity = tonumber(ARGV[1])
 local refillRate = tonumber(ARGV[2])
-local time = redis.call('TIME')
-local timeInUnix = time[1]
-local timeMicrosseconds = time[2]
-local now = tonumber(timeInUnix) * MICROS_PER_SECOND + tonumber(timeMicrosseconds)
+local now
+if ARGV[3] then
+  now = tonumber(ARGV[3])
+else
+  local time = redis.call('TIME')
+  local timeInUnix = time[1]
+  local timeMicroseconds = time[2]
+  now = tonumber(timeInUnix) * MICROS_PER_SECOND + tonumber(timeMicroseconds)
+end
 
 local res = redis.call('HMGET', key, 'tokens', 'ts')
 

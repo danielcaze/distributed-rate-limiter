@@ -47,11 +47,23 @@ func (c *Checker) Ping(ctx context.Context) error { return c.client.Ping(ctx).Er
 
 // Check runs the admission script atomically against the bucket for key.
 func (c *Checker) Check(ctx context.Context, key string) (limiter.Decision, error) {
+	return c.check(ctx, key, nil)
+}
+
+// checkAt runs the same admission path at an explicit time for deterministic
+// same-package tests. Production calls use Check, which leaves time selection
+// to Redis TIME.
+func (c *Checker) checkAt(ctx context.Context, key string, now time.Time) (limiter.Decision, error) {
+	nowMicros := now.UnixMicro()
+	return c.check(ctx, key, &nowMicros)
+}
+
+func (c *Checker) check(ctx context.Context, key string, testNowMicros *int64) (limiter.Decision, error) {
 	if err := c.Ping(ctx); err != nil {
 		return limiter.Decision{}, redisError(err)
 	}
 
-	res, err := evalWithRetry(ctx, c, key)
+	res, err := evalWithRetry(ctx, c, key, testNowMicros)
 
 	if err != nil {
 		return limiter.Decision{}, redisError(err)
@@ -77,8 +89,13 @@ func (c *Checker) Check(ctx context.Context, key string) (limiter.Decision, erro
 	return reply, nil
 }
 
-func evalWithRetry(ctx context.Context, c *Checker, key string) (interface{}, error) {
-	res, err := c.client.EvalSha(ctx, c.sha, []string{key}, c.policy.Capacity, c.policy.RefillTokensPerSecond).Result()
+func evalWithRetry(ctx context.Context, c *Checker, key string, testNowMicros *int64) (interface{}, error) {
+	args := []interface{}{c.policy.Capacity, c.policy.RefillTokensPerSecond}
+	if testNowMicros != nil {
+		args = append(args, *testNowMicros)
+	}
+
+	res, err := c.client.EvalSha(ctx, c.sha, []string{key}, args...).Result()
 
 	if err != nil {
 		if redis.HasErrorPrefix(err, "NOSCRIPT") {
@@ -88,7 +105,7 @@ func evalWithRetry(ctx context.Context, c *Checker, key string) (interface{}, er
 			}
 			c.sha = sha
 
-			res, err := c.client.EvalSha(ctx, c.sha, []string{key}, c.policy.Capacity, c.policy.RefillTokensPerSecond).Result()
+			res, err := c.client.EvalSha(ctx, c.sha, []string{key}, args...).Result()
 			if err != nil {
 				return nil, redisError(err)
 			}
