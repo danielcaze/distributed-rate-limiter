@@ -74,7 +74,9 @@ func TestChecker_LastTokenAndNextCallBeforeRefill(t *testing.T) {
 	}
 	assertDecision(t, beforeRefill, false, 0)
 	assertResetAt(t, beforeRefill, base.Add(2*time.Second))
-	assertRetryAfter(t, beforeRefill, time.Millisecond)
+	// Lua's floating-point token math can add one microsecond when it rounds
+	// the retry delay up to the script's microsecond resolution.
+	assertDurationWithin(t, beforeRefill.RetryAfter, time.Millisecond, time.Microsecond)
 
 	nextAdmission, err := checker.checkAt(ctx, key, base.Add(time.Second))
 	if err != nil {
