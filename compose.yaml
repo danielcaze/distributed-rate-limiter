@@ -1,0 +1,23 @@
+services:
+  limiter:
+    build: .
+    environment:
+      HTTP_ADDR: 0.0.0.0:8080
+      GRPC_ADDR: 127.0.0.1:9090
+      REDIS_ADDR: redis:6379
+      CAPACITY: 2
+      REFILL_TOKENS_PER_SECOND: 1
+      REQUEST_TIMEOUT: 3s
+      SHUTDOWN_TIMEOUT: 5s
+    ports:
+      - "127.0.0.1:8080:8080"
+    depends_on:
+      redis:
+        condition: service_healthy
+  redis:
+    image: redis:7.4.2-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 1s
+      retries: 10
