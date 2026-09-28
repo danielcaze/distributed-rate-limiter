@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"sync"
 	"time"
 
 	"github.com/danielcaze/distributed-rate-limiter/config"
@@ -29,7 +30,9 @@ const (
 type Checker struct {
 	client *redis.Client
 	policy config.Policy
-	sha    string
+
+	shaMu sync.RWMutex
+	sha   string
 }
 
 func New(ctx context.Context, addr string, policy config.Policy) (*Checker, error) {
@@ -39,6 +42,20 @@ func New(ctx context.Context, addr string, policy config.Policy) (*Checker, erro
 		return nil, err
 	}
 	return &Checker{client: client, policy: policy, sha: sha}, nil
+}
+
+// scriptSHA returns the cached script SHA under a read lock; concurrent
+// callers may share one Checker, and the SHA is rewritten after NOSCRIPT.
+func (c *Checker) scriptSHA() string {
+	c.shaMu.RLock()
+	defer c.shaMu.RUnlock()
+	return c.sha
+}
+
+func (c *Checker) setScriptSHA(sha string) {
+	c.shaMu.Lock()
+	defer c.shaMu.Unlock()
+	c.sha = sha
 }
 
 func (c *Checker) Close() error { return c.client.Close() }
@@ -95,7 +112,7 @@ func evalWithRetry(ctx context.Context, c *Checker, key string, testNowMicros *i
 		args = append(args, *testNowMicros)
 	}
 
-	res, err := c.client.EvalSha(ctx, c.sha, []string{key}, args...).Result()
+	res, err := c.client.EvalSha(ctx, c.scriptSHA(), []string{key}, args...).Result()
 
 	if err != nil {
 		if redis.HasErrorPrefix(err, "NOSCRIPT") {
@@ -103,9 +120,9 @@ func evalWithRetry(ctx context.Context, c *Checker, key string, testNowMicros *i
 			if err != nil {
 				return nil, redisError(err)
 			}
-			c.sha = sha
+			c.setScriptSHA(sha)
 
-			res, err := c.client.EvalSha(ctx, c.sha, []string{key}, args...).Result()
+			res, err := c.client.EvalSha(ctx, sha, []string{key}, args...).Result()
 			if err != nil {
 				return nil, redisError(err)
 			}
