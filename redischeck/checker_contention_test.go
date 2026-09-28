@@ -2,6 +2,7 @@ package redischeck
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -14,19 +15,21 @@ import (
 func TestChecker_ContentionAcrossInstancesAdmitsOnlyCapacity(t *testing.T) {
 	// Calls exceed capacity so a non-atomic check would show up as extra admissions.
 	// Two checkers with separate clients stand in for two service instances sharing one Redis.
-	instances := 2
-	capacity := 100
-	calls := 1000
+	const instances = 2
+	const capacity = 100
+	const calls = 1000
 
 	if instances < 2 || calls <= capacity {
 		t.Fatalf("invalid setup: need instances >= 2 and calls > capacity, got instances=%d calls=%d capacity=%d", instances, calls, capacity)
 	}
 
 	checkers, ctx := setupMultipleCheckers(t, config.Policy{Capacity: uint64(capacity), RefillTokensPerSecond: 1}, instances)
-	var failed, allowed, denied atomic.Int64
+	var failed, allowed, denied, outOfRange atomic.Int64
 
 	now := time.Unix(1_700_000_000, 0).UTC()
 	start := make(chan struct{})
+	var remainings [capacity]atomic.Int64
+	var firstError atomic.Pointer[error]
 	var wg sync.WaitGroup
 	for i := range calls {
 		c := checkers[i%len(checkers)]
@@ -36,11 +39,17 @@ func TestChecker_ContentionAcrossInstancesAdmitsOnlyCapacity(t *testing.T) {
 
 			if err != nil {
 				failed.Add(1)
+				firstError.CompareAndSwap(nil, &err)
 				return
 			}
 
 			if decision.Allowed {
 				allowed.Add(1)
+				if decision.Remaining < capacity {
+					remainings[decision.Remaining].Add(1)
+				} else {
+					outOfRange.Add(1)
+				}
 			} else {
 				denied.Add(1)
 			}
@@ -49,10 +58,27 @@ func TestChecker_ContentionAcrossInstancesAdmitsOnlyCapacity(t *testing.T) {
 	close(start)
 	wg.Wait()
 
-	gotFailed, gotAllowed, gotDenied := failed.Load(), allowed.Load(), denied.Load()
+	if firstErr := firstError.Load(); firstErr != nil {
+		t.Errorf("first error captured: %v", *firstErr)
+	}
 
-	if gotAllowed != int64(capacity) || gotDenied != int64(calls-capacity) || gotFailed != 0 {
-		t.Fatalf("allowed=%d denied=%d errors=%d, want %d/%d/%d", gotAllowed, gotDenied, gotFailed, capacity, calls-capacity, 0)
+	remainingDivergences := []string{}
+	for i := range capacity {
+		gotRemaining := remainings[i].Load()
+
+		if gotRemaining != 1 {
+			remainingDivergences = append(remainingDivergences, fmt.Sprintf("remaining=%d seen %d times", i, gotRemaining))
+		}
+	}
+
+	if len(remainingDivergences) != 0 {
+		t.Errorf("remaining divergences: %v", remainingDivergences)
+	}
+
+	gotFailed, gotAllowed, gotDenied, gotOutOfRange := failed.Load(), allowed.Load(), denied.Load(), outOfRange.Load()
+
+	if gotAllowed != int64(capacity) || gotDenied != int64(calls-capacity) || gotFailed != 0 || gotOutOfRange != 0 {
+		t.Fatalf("allowed=%d denied=%d errors=%d outOfRange=%d, want %d/%d/%d/%d", gotAllowed, gotDenied, gotFailed, gotOutOfRange, capacity, calls-capacity, 0, 0)
 	}
 }
 
