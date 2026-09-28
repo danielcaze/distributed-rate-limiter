@@ -12,9 +12,16 @@ import (
 )
 
 func TestChecker_ContentionAcrossInstancesAdmitsOnlyCapacity(t *testing.T) {
+	// Calls exceed capacity so a non-atomic check would show up as extra admissions.
+	// Two checkers with separate clients stand in for two service instances sharing one Redis.
 	instances := 2
 	capacity := 100
 	calls := 1000
+
+	if instances < 2 || calls <= capacity {
+		t.Fatalf("invalid setup: need instances >= 2 and calls > capacity, got instances=%d calls=%d capacity=%d", instances, calls, capacity)
+	}
+
 	checkers, ctx := setupMultipleCheckers(t, config.Policy{Capacity: uint64(capacity), RefillTokensPerSecond: 1}, instances)
 	var failed, allowed, denied atomic.Int64
 
@@ -47,7 +54,6 @@ func TestChecker_ContentionAcrossInstancesAdmitsOnlyCapacity(t *testing.T) {
 	if gotAllowed != int64(capacity) || gotDenied != int64(calls-capacity) || gotFailed != 0 {
 		t.Fatalf("allowed=%d denied=%d errors=%d, want %d/%d/%d", gotAllowed, gotDenied, gotFailed, capacity, calls-capacity, 0)
 	}
-	t.Logf("allowed=%d denied=%d errors=%d, want %d/%d/%d", gotAllowed, gotDenied, gotFailed, capacity, calls-capacity, 0)
 }
 
 func setupMultipleCheckers(t *testing.T, policy config.Policy, numberOfCheckers int) ([]*Checker, context.Context) {
