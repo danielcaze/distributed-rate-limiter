@@ -25,6 +25,7 @@ const (
 	remainingIdx
 	resetAtIdx
 	retryAfterIdx
+	replyLen
 )
 
 type Checker struct {
@@ -86,21 +87,9 @@ func (c *Checker) check(ctx context.Context, key string, testNowMicros *int64) (
 		return limiter.Decision{}, redisError(err)
 	}
 
-	arr, ok := res.([]interface{})
-	if !ok {
-		return limiter.Decision{}, status.Error(codes.Internal, fmt.Sprintf("admission script returned unexpected reply type %T", res))
-	}
-
-	allowed := arr[allowedIdx].(int64) == 1
-	remaining := uint64(arr[remainingIdx].(int64))
-	resetAt := time.UnixMicro(arr[resetAtIdx].(int64))
-	retryAfter := time.Duration(arr[retryAfterIdx].(int64)) * time.Microsecond
-
-	reply := limiter.Decision{
-		Allowed:    allowed,
-		Remaining:  remaining,
-		ResetAt:    resetAt,
-		RetryAfter: retryAfter,
+	reply, err := parseReply(res)
+	if err != nil {
+		return limiter.Decision{}, redisError(err)
 	}
 
 	return reply, nil
@@ -145,4 +134,68 @@ func redisError(err error) error {
 		return status.Error(codes.DeadlineExceeded, "Redis deadline exceeded")
 	}
 	return status.Error(codes.Unavailable, "Redis unavailable")
+}
+
+func parseReply(res interface{}) (limiter.Decision, error) {
+	arr, ok := res.([]interface{})
+	if !ok {
+		return limiter.Decision{}, status.Error(codes.Internal, fmt.Sprintf("admission script returned unexpected reply type %T", res))
+	}
+
+	if len(arr) != replyLen {
+		return limiter.Decision{}, status.Errorf(codes.Internal, "admission script returned %d fields, want %d", len(arr), replyLen)
+	}
+
+	allowedRaw, err := intField(arr, allowedIdx, "allowed")
+	if err != nil {
+		return limiter.Decision{}, err
+	}
+	if allowedRaw != 0 && allowedRaw != 1 {
+		return limiter.Decision{}, status.Errorf(codes.Internal, "admission script returned unexpected value for allowed: %d", allowedRaw)
+	}
+	allowed := allowedRaw == 1
+
+	remainingRaw, err := intField(arr, remainingIdx, "remaining")
+	if err != nil {
+		return limiter.Decision{}, err
+	}
+	if remainingRaw < 0 {
+		return limiter.Decision{}, status.Errorf(codes.Internal, "admission script returned unexpected value for remaining: %d", remainingRaw)
+	}
+	remaining := uint64(remainingRaw)
+
+	resetAtRaw, err := intField(arr, resetAtIdx, "resetAt")
+	if err != nil {
+		return limiter.Decision{}, err
+	}
+	resetAt := time.UnixMicro(resetAtRaw)
+
+	retryAfterRaw, err := intField(arr, retryAfterIdx, "retryAfter")
+	if err != nil {
+		return limiter.Decision{}, err
+	}
+	if allowed && retryAfterRaw != 0 {
+		return limiter.Decision{}, status.Errorf(codes.Internal, "admission script returned unexpected value for retryAfter: %d", retryAfterRaw)
+	} else if retryAfterRaw < 0 {
+		return limiter.Decision{}, status.Errorf(codes.Internal, "admission script returned unexpected value for retryAfter: %d", retryAfterRaw)
+	}
+	retryAfter := time.Duration(retryAfterRaw) * time.Microsecond
+
+	reply := limiter.Decision{
+		Allowed:    allowed,
+		Remaining:  remaining,
+		ResetAt:    resetAt,
+		RetryAfter: retryAfter,
+	}
+
+	return reply, nil
+}
+
+func intField(arr []interface{}, idx int, name string) (int64, error) {
+	val, ok := arr[idx].(int64)
+	if !ok {
+		return 0, status.Errorf(codes.Internal, "admission script returned unexpected type for %s: %T", name, arr[idx])
+	}
+
+	return val, nil
 }
