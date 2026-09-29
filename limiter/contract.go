@@ -1,4 +1,4 @@
-// Package limiter defines the admission seam used by the future gRPC adapter.
+// Package limiter defines the admission seam used by the gRPC adapter.
 package limiter
 
 import (

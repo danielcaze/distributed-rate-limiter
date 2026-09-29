@@ -1,5 +1,4 @@
--- Pending admission implementation. This file intentionally contains no commands.
--- Input contract for the later script: KEYS[1] is the bucket key, ARGV[1] is
+-- Input contract: KEYS[1] is the bucket key, ARGV[1] is
 -- the shared capacity (positive whole tokens), and ARGV[2] is the shared refill
 -- rate (positive tokens per second). Production time comes from Redis TIME;
 -- ARGV[3] is an optional timestamp in Unix microseconds, supplied only by the

@@ -29,7 +29,6 @@ func New(client limiterv1.LimiterClient, timeout time.Duration, ready func(conte
 			return
 		}
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("dependencies ready; admission not implemented\n"))
 	})
 	mux.HandleFunc("POST /v1/check", func(w http.ResponseWriter, r *http.Request) {
 		mediaType, _, mediaErr := mime.ParseMediaType(r.Header.Get("Content-Type"))
