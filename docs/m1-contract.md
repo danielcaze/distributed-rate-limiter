@@ -53,10 +53,12 @@ The HTTP gateway uses `protojson` to decode only the generated `CheckRequest` fi
 | `HTTP_ADDR` | `127.0.0.1:8080` | HTTP listener; Compose uses `0.0.0.0:8080` inside the container and publishes only to host loopback. |
 | `GRPC_ADDR` | `127.0.0.1:9090` | Private loopback gRPC listener. |
 | `REDIS_ADDR` | `127.0.0.1:6379` | Redis TCP address. |
-| `CAPACITY` | `2` | Positive integer maximum admissions per bucket. |
-| `REFILL_TOKENS_PER_SECOND` | `1` | Positive integer continuous refill rate, in tokens per second. |
+| `CAPACITY` | `2` | Positive integer maximum admissions per bucket. Replaced in M2. |
+| `REFILL_TOKENS_PER_SECOND` | `1` | Positive integer continuous refill rate, in tokens per second. Replaced in M2. |
 | `REQUEST_TIMEOUT` | `3s` | Positive Go duration for Redis startup/readiness PING and each HTTP check's gRPC call. |
 | `SHUTDOWN_TIMEOUT` | `5s` | Positive Go duration bounding graceful HTTP and gRPC shutdown. |
+
+M2 replaces `CAPACITY` and `REFILL_TOKENS_PER_SECOND` with `ALGORITHM`, `LIMIT`, and `PERIOD`; the token bucket reads them as capacity `LIMIT` refilling `LIMIT` per `PERIOD`. See the [M2 contract](m2-contract.md#configuration).
 
 Redis is pinged at startup and on each readiness request. `/healthz` reports only process liveness; `/readyz` returns HTTP 200 when Redis answers a PING and HTTP 503 otherwise. A ready process does not mean a particular check will be admitted. Each check sends a Redis PING before `EVALSHA`, so an outage maps to `Unavailable` or `DeadlineExceeded` before the script runs. The adapter uses go-redis `MaxRetries: -1`, which disables its command retries; the loopback gRPC client disables configured retries. gRPC may transparently retry calls that the server did not process. There is no application retry of an uncertain admission.
 

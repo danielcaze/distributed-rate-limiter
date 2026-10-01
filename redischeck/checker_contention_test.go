@@ -23,7 +23,7 @@ func TestChecker_ContentionAcrossInstancesAdmitsOnlyCapacity(t *testing.T) {
 		t.Fatalf("invalid setup: need instances >= 2 and calls > capacity, got instances=%d calls=%d capacity=%d", instances, calls, capacity)
 	}
 
-	checkers, ctx := setupMultipleCheckers(t, config.Policy{Capacity: uint64(capacity), RefillTokensPerSecond: 1}, instances)
+	checkers, ctx := setupMultipleCheckers(t, config.Policy{Limit: uint64(capacity), Period: time.Duration(capacity) * time.Second}, instances)
 	var failed, allowed, denied, outOfRange atomic.Int64
 
 	now := time.Unix(1_700_000_000, 0).UTC()

@@ -18,3 +18,9 @@ The number of tokens available in a bucket after an admission decision.
 
 **Refill**:
 The continuous restoration of tokens in a bucket over time, up to capacity.
+
+**Limit**:
+The number of admissions the shared policy allows per period. For the token bucket it is the capacity.
+
+**Period**:
+The time over which the limit applies. For window algorithms it is the window length; for the token bucket it is the time an empty bucket takes to fill.

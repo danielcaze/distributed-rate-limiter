@@ -3,6 +3,7 @@ package redischeck_test
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/danielcaze/distributed-rate-limiter/config"
 	"github.com/danielcaze/distributed-rate-limiter/redischeck"
@@ -18,7 +19,7 @@ func TestRedis_Connection(t *testing.T) {
 }
 
 func TestChecker_FirstCallAllowed(t *testing.T) {
-	checker, ctx, _ := setupChecker(t, config.Policy{Capacity: 2, RefillTokensPerSecond: 1})
+	checker, ctx, _ := setupChecker(t, config.Policy{Limit: 2, Period: 2 * time.Second})
 	key := "user-123"
 
 	decision, err := checker.Check(ctx, key)
@@ -32,7 +33,7 @@ func TestChecker_FirstCallAllowed(t *testing.T) {
 
 func TestChecker_DeniesWhenExhausted(t *testing.T) {
 	capacity := 2
-	checker, ctx, _ := setupChecker(t, config.Policy{Capacity: uint64(capacity), RefillTokensPerSecond: 1})
+	checker, ctx, _ := setupChecker(t, config.Policy{Limit: uint64(capacity), Period: time.Duration(capacity) * time.Second})
 	key := "user-123"
 
 	for i := range capacity + 1 {

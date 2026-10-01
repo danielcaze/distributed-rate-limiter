@@ -13,7 +13,7 @@ import (
 )
 
 func TestChecker_BucketsStartFullPerKey(t *testing.T) {
-	checker, ctx, _ := setupChecker(t, config.Policy{Capacity: 2, RefillTokensPerSecond: 1})
+	checker, ctx, _ := setupChecker(t, config.Policy{Limit: 2, Period: 2 * time.Second})
 	now := time.Unix(1_700_000_000, 0).UTC()
 
 	firstA, err := checker.checkAt(ctx, "key-a", now)
@@ -42,7 +42,7 @@ func TestChecker_BucketsStartFullPerKey(t *testing.T) {
 }
 
 func TestChecker_LastTokenAndNextCallBeforeRefill(t *testing.T) {
-	checker, ctx, _ := setupChecker(t, config.Policy{Capacity: 2, RefillTokensPerSecond: 1})
+	checker, ctx, _ := setupChecker(t, config.Policy{Limit: 2, Period: 2 * time.Second})
 	key := "user-123"
 	base := time.Unix(1_700_000_000, 0).UTC()
 
@@ -88,7 +88,7 @@ func TestChecker_LastTokenAndNextCallBeforeRefill(t *testing.T) {
 }
 
 func TestChecker_DenialDoesNotConsumeAndRefillsContinuously(t *testing.T) {
-	checker, ctx, _ := setupChecker(t, config.Policy{Capacity: 1, RefillTokensPerSecond: 2})
+	checker, ctx, _ := setupChecker(t, config.Policy{Limit: 1, Period: 500 * time.Millisecond})
 	key := "user-123"
 	base := time.Unix(1_700_000_000, 0).UTC()
 
@@ -123,7 +123,7 @@ func TestChecker_DenialDoesNotConsumeAndRefillsContinuously(t *testing.T) {
 }
 
 func TestChecker_TestTimeIsInternalAndProductionUsesRedisTime(t *testing.T) {
-	checker, ctx, _ := setupChecker(t, config.Policy{Capacity: 1, RefillTokensPerSecond: 1})
+	checker, ctx, _ := setupChecker(t, config.Policy{Limit: 1, Period: time.Second})
 	key := "user-123"
 	fakeTime := time.Unix(1, 0).UTC()
 
@@ -141,7 +141,7 @@ func TestChecker_TestTimeIsInternalAndProductionUsesRedisTime(t *testing.T) {
 }
 
 func TestChecker_RedisFailureIsNotQuotaDenial(t *testing.T) {
-	checker, ctx, closeChecker := setupChecker(t, config.Policy{Capacity: 1, RefillTokensPerSecond: 1})
+	checker, ctx, closeChecker := setupChecker(t, config.Policy{Limit: 1, Period: time.Second})
 	key := "user-123"
 	now := time.Unix(1_700_000_000, 0).UTC()
 

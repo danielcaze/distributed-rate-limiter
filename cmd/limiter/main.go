@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"net"
 	"net/http"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/danielcaze/distributed-rate-limiter/config"
 	limiterv1 "github.com/danielcaze/distributed-rate-limiter/gen/limiter/v1"
+	"github.com/danielcaze/distributed-rate-limiter/limiter"
 	"github.com/danielcaze/distributed-rate-limiter/redischeck"
 	"github.com/danielcaze/distributed-rate-limiter/transport/grpcserver"
 	"github.com/danielcaze/distributed-rate-limiter/transport/httpgateway"
@@ -25,13 +27,36 @@ func main() {
 	}
 }
 
+// redisChecker is what main needs from any algorithm's checker: admission,
+// the readiness PING, and closing its Redis client.
+type redisChecker interface {
+	limiter.Checker
+	Ping(ctx context.Context) error
+	Close() error
+}
+
+// newChecker builds the checker for the configured algorithm. Only that
+// algorithm's script is loaded and run.
+func newChecker(ctx context.Context, cfg config.Config) (redisChecker, error) {
+	switch cfg.Algorithm {
+	case config.TokenBucket:
+		checker, err := redischeck.New(ctx, cfg.RedisAddr, cfg.Policy)
+		if err != nil {
+			return nil, err
+		}
+		return checker, nil
+	default:
+		return nil, fmt.Errorf("ALGORITHM %s is not implemented yet", cfg.Algorithm)
+	}
+}
+
 func run() error {
 	cfg, err := config.Load()
 	if err != nil {
 		return err
 	}
 	startupCtx, cancel := context.WithTimeout(context.Background(), cfg.RequestTimeout)
-	checker, err := redischeck.New(startupCtx, cfg.RedisAddr, cfg.Policy)
+	checker, err := newChecker(startupCtx, cfg)
 	if err != nil {
 		cancel()
 		return err

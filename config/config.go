@@ -1,4 +1,4 @@
-// Package config reads the shared M1 service settings from the environment.
+// Package config reads the shared service settings from the environment.
 package config
 
 import (
@@ -9,15 +9,32 @@ import (
 	"time"
 )
 
+// Accepted ALGORITHM values.
+const (
+	TokenBucket          = "token_bucket"
+	FixedWindow          = "fixed_window"
+	SlidingWindowLog     = "sliding_window_log"
+	SlidingWindowCounter = "sliding_window_counter"
+)
+
+// Policy is the one admission policy shared by every algorithm: Limit
+// admissions per Period.
 type Policy struct {
-	Capacity              uint64
-	RefillTokensPerSecond uint64
+	Limit  uint64
+	Period time.Duration
+}
+
+// RefillPerSecond is the token bucket's continuous refill rate. The bucket
+// capacity is Limit, so an empty bucket fills in exactly one Period.
+func (p Policy) RefillPerSecond() float64 {
+	return float64(p.Limit) / p.Period.Seconds()
 }
 
 type Config struct {
 	HTTPAddr        string
 	GRPCAddr        string
 	RedisAddr       string
+	Algorithm       string
 	Policy          Policy
 	RequestTimeout  time.Duration
 	ShutdownTimeout time.Duration
@@ -30,13 +47,23 @@ func Load() (Config, error) {
 		HTTPAddr:  env("HTTP_ADDR", "127.0.0.1:8080"),
 		GRPCAddr:  env("GRPC_ADDR", "127.0.0.1:9090"),
 		RedisAddr: env("REDIS_ADDR", "127.0.0.1:6379"),
+		Algorithm: env("ALGORITHM", TokenBucket),
+	}
+	switch c.Algorithm {
+	case TokenBucket, FixedWindow, SlidingWindowLog, SlidingWindowCounter:
+	default:
+		return Config{}, fmt.Errorf("ALGORITHM must be one of %s, %s, %s, %s", TokenBucket, FixedWindow, SlidingWindowLog, SlidingWindowCounter)
 	}
 	var err error
-	if c.Policy.Capacity, err = positiveUint("CAPACITY", "2"); err != nil {
+	if c.Policy.Limit, err = positiveUint("LIMIT", "2"); err != nil {
 		return Config{}, err
 	}
-	if c.Policy.RefillTokensPerSecond, err = positiveUint("REFILL_TOKENS_PER_SECOND", "1"); err != nil {
+	if c.Policy.Period, err = positiveDuration("PERIOD", "2s"); err != nil {
 		return Config{}, err
+	}
+	// The scripts work in whole Unix microseconds.
+	if c.Policy.Period%time.Microsecond != 0 {
+		return Config{}, fmt.Errorf("PERIOD must be a whole number of microseconds")
 	}
 	if c.RequestTimeout, err = positiveDuration("REQUEST_TIMEOUT", "3s"); err != nil {
 		return Config{}, err

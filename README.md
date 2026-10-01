@@ -26,7 +26,7 @@ Remove-Item .check-request.json
 docker compose down
 ```
 
-Compose sets `CAPACITY=2` and `REFILL_TOKENS_PER_SECOND=1`. The first two checks are allowed with `remaining` 1 and then 0, the third is denied with HTTP 429 and a `retryAfter` under one second, and the check after a two-second pause, enough to refill the whole bucket, is allowed again with `remaining` 1. Decision times depend on when the calls run, so `resetAt` and `retryAfter` differ between runs.
+Compose sets `ALGORITHM=token_bucket`, `LIMIT=2`, and `PERIOD=2s`, which the token bucket reads as a capacity of 2 refilling 1 token per second. The first two checks are allowed with `remaining` 1 and then 0, the third is denied with HTTP 429 and a `retryAfter` under one second, and the check after a two-second pause, enough to refill the whole bucket, is allowed again with `remaining` 1. Decision times depend on when the calls run, so `resetAt` and `retryAfter` differ between runs.
 
 `/healthz` reports process liveness; `/readyz` reports whether Redis answers a PING. Compose publishes only the HTTP port on host loopback. The HTTP endpoint assumes a trusted backend supplies `key`; it is not an authenticated public endpoint.
 

@@ -5,8 +5,9 @@ services:
       HTTP_ADDR: 0.0.0.0:8080
       GRPC_ADDR: 127.0.0.1:9090
       REDIS_ADDR: redis:6379
-      CAPACITY: 2
-      REFILL_TOKENS_PER_SECOND: 1
+      ALGORITHM: token_bucket
+      LIMIT: 2
+      PERIOD: 2s
       REQUEST_TIMEOUT: 3s
       SHUTDOWN_TIMEOUT: 5s
     ports:

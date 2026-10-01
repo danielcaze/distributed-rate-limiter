@@ -96,7 +96,7 @@ func (c *Checker) check(ctx context.Context, key string, testNowMicros *int64) (
 }
 
 func evalWithRetry(ctx context.Context, c *Checker, key string, testNowMicros *int64) (interface{}, error) {
-	args := []interface{}{c.policy.Capacity, c.policy.RefillTokensPerSecond}
+	args := []interface{}{c.policy.Limit, c.policy.RefillPerSecond()}
 	if testNowMicros != nil {
 		args = append(args, *testNowMicros)
 	}
